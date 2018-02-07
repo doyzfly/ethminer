@@ -264,19 +264,6 @@ CLMiner::~CLMiner()
 	kick_miner();
 }
 
-void CLMiner::report(uint64_t _nonce, WorkPackage const& _w)
-{
-	assert(_nonce != 0);
-	// TODO: Why re-evaluating?
-	Result r = EthashAux::eval(_w.seed, _w.header, _nonce);
-	if (r.value < _w.boundary)
-		farm.submitProof(Solution{_nonce, r.mixHash, _w, false});
-	else {
-		farm.failedSolution();
-		cwarn << "FAILURE: GPU gave incorrect result!";
-	}
-}
-
 void CLMiner::workLoop()
 {
 	// Memory for zero-ing buffers. Cannot be static because crashes on macOS.
@@ -361,11 +348,27 @@ void CLMiner::workLoop()
 			m_queue.enqueueNDRangeKernel(m_searchKernel, cl::NullRange, m_globalWorkSize, m_workgroupSize);
 
 			// Report results while the kernel is running.
-			// It takes some time because ethash must be re-evaluated on CPU.
 			if (count > SEARCH_RESULTS)
 				count = SEARCH_RESULTS;
-			for (uint32_t i = 0; i < count; i++)
-				report(results.result[i].gid + current.startNonce, current);
+			for (uint32_t i = 0; i < count; i++) {
+				uint64_t nonce = results.result[i].gid + current.startNonce;
+				if (true)
+				{
+					Result r = EthashAux::eval(current.seed, current.header, nonce);
+					if (r.value < current.boundary)
+					{
+						cerr << r.mixHash.hex() << endl;
+						cerr << ((h256 *)results.result[i].mix)->hex() << endl;
+						farm.submitProof(Solution{nonce, r.mixHash, current, false});
+					}
+					else {
+						farm.failedSolution();
+						cwarn << "FAILURE: GPU gave incorrect result!";
+					}
+				}
+				else
+					farm.submitProof(Solution{nonce, *((h256 *)results.result[i].mix), current, false});
+			}
 
 			current = w;        // kernel now processing newest work
 			current.startNonce = startNonce;

@@ -14,8 +14,9 @@ typedef struct {
 	struct {
 		// One word for gid and 8 for mix hash
 		uint32_t gid;
-		uint32_t mix[8];
-		uint32_t pad[7]; // pad to size power of 2
+		uint32_t pad0;
+		uint64_t mix[4];
+		uint32_t pad[6]; // pad to size power of 2
 	} result[SEARCH_RESULTS];
 } search_results;
 

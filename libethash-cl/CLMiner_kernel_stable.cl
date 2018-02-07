@@ -44,16 +44,17 @@
 // one solution per stream hash calculation
 // Leave room for up to 4 results. A power
 // of 2 here will yield better CUDA optimization
-#define SEARCH_RESULTS 4
+//#define SEARCH_RESULTS 4
 
 typedef struct {
 	uint count;
 	struct {
 		// One word for gid and 8 for mix hash
 		uint gid;
-		uint mix[8];
-		uint pad[7]; // pad to size power of 2
-	} result[SEARCH_RESULTS];
+		uint pad0;
+		ulong mix[4];
+		uint pad1[6]; // pad to size power of 2
+	} result[0];
 } search_results;
 
 __constant uint2 const Keccak_f1600_RC[24] = {
@@ -244,15 +245,8 @@ static void keccak_f1600_no_absorb(uint2* a, uint out_size, uint isolate)
 		// that information away, hence the implementation of keccak here
 		// doesn't bother.
 		if (isolate)
-		{
 			keccak_f1600_round(a, r++);
-			//if (r == 23) o = out_size;
-		}
 	} 
-	
-
-	// final round optimised for digest size
-	//keccak_f1600_round(a, 23, out_size);
 }
 
 #define copy(dst, src, count) for (uint i = 0; i != count; ++i) { (dst)[i] = (src)[i]; }
@@ -335,6 +329,7 @@ __kernel void ethash_search(
 	// Threads work together in this phase in groups of 8.
 	uint const thread_id = gid & 7;
 	uint const hash_id = (gid % GROUP_SIZE) >> 3;
+	ulong mix_hash[4];
 
 	for (int i = 0; i < THREADS_PER_HASH; i++)
 	{
@@ -375,7 +370,10 @@ __kernel void ethash_search(
 		barrier(CLK_LOCAL_MEM_FENCE);
 
 		if (i == thread_id)
+		{
 			copy(state + 8, share[hash_id].ulongs, 4);
+			copy(mix_hash, state + 8, 4);
+		}
 
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
@@ -393,8 +391,11 @@ __kernel void ethash_search(
 	if (as_ulong(as_uchar8(state[0]).s76543210) < target)
 	{
 		uint slot = atomic_inc(&g_output->count);
-		if (slot < MAX_OUTPUTS)
+		if (slot < MAX_OUTPUTS) {
 			g_output->result[slot].gid = gid;
+			copy(g_output->result[slot].mix, mix_hash, 4);
+		}
+
 	}
 }
 
