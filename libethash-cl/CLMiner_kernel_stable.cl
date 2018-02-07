@@ -307,6 +307,7 @@ __kernel void ethash_search(
 	)
 {
 	__local compute_hash_share share[HASHES_PER_LOOP];
+	__local ulong4 mix_hash[GROUP_SIZE];
 
 	uint const gid = get_global_id(0);
 
@@ -329,7 +330,6 @@ __kernel void ethash_search(
 	// Threads work together in this phase in groups of 8.
 	uint const thread_id = gid & 7;
 	uint const hash_id = (gid % GROUP_SIZE) >> 3;
-	ulong mix_hash[4];
 
 	for (int i = 0; i < THREADS_PER_HASH; i++)
 	{
@@ -372,7 +372,10 @@ __kernel void ethash_search(
 		if (i == thread_id)
 		{
 			copy(state + 8, share[hash_id].ulongs, 4);
-			copy(mix_hash, state + 8, 4);
+			mix_hash[gid % GROUP_SIZE].x = state[8];
+			mix_hash[gid % GROUP_SIZE].y = state[9];
+			mix_hash[gid % GROUP_SIZE].z = state[10];
+			mix_hash[gid % GROUP_SIZE].w = state[11];
 		}
 
 		barrier(CLK_LOCAL_MEM_FENCE);
@@ -393,7 +396,10 @@ __kernel void ethash_search(
 		uint slot = atomic_inc(&g_output->count);
 		if (slot < MAX_OUTPUTS) {
 			g_output->result[slot].gid = gid;
-			copy(g_output->result[slot].mix, mix_hash, 4);
+			g_output->result[slot].mix[0] = mix_hash[gid % GROUP_SIZE].x;
+			g_output->result[slot].mix[1] = mix_hash[gid % GROUP_SIZE].y;
+			g_output->result[slot].mix[2] = mix_hash[gid % GROUP_SIZE].z;
+			g_output->result[slot].mix[3] = mix_hash[gid % GROUP_SIZE].w;
 		}
 
 	}
