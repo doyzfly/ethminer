@@ -352,13 +352,13 @@ void CLMiner::workLoop()
 				count = SEARCH_RESULTS;
 			for (uint32_t i = 0; i < count; i++) {
 				uint64_t nonce = results.result[i].gid + current.startNonce;
-				if (true)
+				if (false)
 				{
 					Result r = EthashAux::eval(current.seed, current.header, nonce);
 					if (r.value < current.boundary)
 					{
-						cerr << r.mixHash.hex() << endl;
-						cerr << ((h256 *)results.result[i].mix)->hex() << endl;
+						//cerr << r.mixHash.hex() << endl;
+						//cerr << ((h256 *)results.result[i].mix)->hex() << endl;
 						farm.submitProof(Solution{nonce, r.mixHash, current, false});
 					}
 					else {

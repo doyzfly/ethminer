@@ -73,6 +73,16 @@
 
 #define mem_fence(x) barrier(x)
 
+typedef struct {
+	uint count;
+	struct {
+		// One word for gid and 8 for mix hash
+		uint gid;
+		uint pad0;
+		ulong mix[4];
+		uint pad1[6]; // pad to size power of 2
+	} result[0];
+} search_results;
 
 __constant ulong const Keccak_f1600_RC[24] = {
     (0x0000000000000001UL),
@@ -273,7 +283,7 @@ typedef union {
 __attribute__((reqd_work_group_size(GROUP_SIZE, 1, 1)))
 #endif
 __kernel void ethash_search(
-    __global volatile uint* restrict g_output,
+    __global volatile search_results* restrict g_output,
     __constant hash32_t const* g_header,
     __global hash128_t const* g_dag,
     ulong start_nonce,

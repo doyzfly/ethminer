@@ -46,17 +46,6 @@
 // of 2 here will yield better CUDA optimization
 //#define SEARCH_RESULTS 4
 
-typedef struct {
-	uint count;
-	struct {
-		// One word for gid and 8 for mix hash
-		uint gid;
-		uint pad0;
-		ulong mix[4];
-		uint pad1[6]; // pad to size power of 2
-	} result[0];
-} search_results;
-
 __constant uint2 const Keccak_f1600_RC[24] = {
 	(uint2)(0x00000001, 0x00000000),
 	(uint2)(0x00008082, 0x00000000),
@@ -294,6 +283,17 @@ typedef union {
 	uint  uints[16];
 } compute_hash_share;
 
+typedef struct {
+	uint count;
+	uint pad0[7];
+	struct {
+		// One word for gid and 8 for mix hash
+		uint gid;
+		uint pad1[7];
+		ulong4 mix;
+	} result[0];
+} search_results;
+
 #if PLATFORM != OPENCL_PLATFORM_NVIDIA // use maxrregs on nv
 __attribute__((reqd_work_group_size(GROUP_SIZE, 1, 1)))
 #endif
@@ -372,10 +372,7 @@ __kernel void ethash_search(
 		if (i == thread_id)
 		{
 			copy(state + 8, share[hash_id].ulongs, 4);
-			mix_hash[gid % GROUP_SIZE].x = state[8];
-			mix_hash[gid % GROUP_SIZE].y = state[9];
-			mix_hash[gid % GROUP_SIZE].z = state[10];
-			mix_hash[gid % GROUP_SIZE].w = state[11];
+			mix_hash[gid % GROUP_SIZE] = *((ulong4 *)&state[8]);
 		}
 
 		barrier(CLK_LOCAL_MEM_FENCE);
@@ -396,10 +393,7 @@ __kernel void ethash_search(
 		uint slot = atomic_inc(&g_output->count);
 		if (slot < MAX_OUTPUTS) {
 			g_output->result[slot].gid = gid;
-			g_output->result[slot].mix[0] = mix_hash[gid % GROUP_SIZE].x;
-			g_output->result[slot].mix[1] = mix_hash[gid % GROUP_SIZE].y;
-			g_output->result[slot].mix[2] = mix_hash[gid % GROUP_SIZE].z;
-			g_output->result[slot].mix[3] = mix_hash[gid % GROUP_SIZE].w;
+			g_output->result[slot].mix = mix_hash[gid % GROUP_SIZE];
 		}
 
 	}
