@@ -40,6 +40,22 @@
 #define HASHES_PER_LOOP (GROUP_SIZE / THREADS_PER_HASH)
 #define FNV_PRIME	0x01000193
 
+// It is virtually impossible to get more than
+// one solution per stream hash calculation
+// Leave room for up to 4 results. A power
+// of 2 here will yield better CUDA optimization
+#define SEARCH_RESULTS 4
+
+typedef struct {
+	uint count;
+	struct {
+		// One word for gid and 8 for mix hash
+		uint gid;
+		uint mix[8];
+		uint pad[7]; // pad to size power of 2
+	} result[SEARCH_RESULTS];
+} search_results;
+
 __constant uint2 const Keccak_f1600_RC[24] = {
 	(uint2)(0x00000001, 0x00000000),
 	(uint2)(0x00008082, 0x00000000),
@@ -288,7 +304,7 @@ typedef union {
 __attribute__((reqd_work_group_size(GROUP_SIZE, 1, 1)))
 #endif
 __kernel void ethash_search(
-	__global volatile uint* restrict g_output,
+	__global volatile search_results* restrict g_output,
 	__constant hash32_t const* g_header,
 	__global hash128_t const* g_dag,
 	ulong start_nonce,
@@ -376,8 +392,9 @@ __kernel void ethash_search(
 
 	if (as_ulong(as_uchar8(state[0]).s76543210) < target)
 	{
-		uint slot = min(MAX_OUTPUTS, atomic_inc(&g_output[0]) + 1);
-		g_output[slot] = gid;
+		uint slot = atomic_inc(&g_output->count);
+		if (slot < MAX_OUTPUTS)
+			g_output->result[slot].gid = gid;
 	}
 }
 

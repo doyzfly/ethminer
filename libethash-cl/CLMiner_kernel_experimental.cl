@@ -1,3 +1,5 @@
+#include "CLMiner_kernel_shared.h"
+
 #define OPENCL_PLATFORM_UNKNOWN 0
 #define OPENCL_PLATFORM_NVIDIA  1
 #define OPENCL_PLATFORM_AMD     2

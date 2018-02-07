@@ -5,6 +5,7 @@
 
 #include "CLMiner.h"
 #include <libethash/internal.h>
+#include "CLMiner_kernel_shared.h"
 #include "CLMiner_kernel_stable.h"
 #include "CLMiner_kernel_experimental.h"
 
@@ -20,8 +21,6 @@ unsigned CLMiner::s_workgroupSize = CLMiner::c_defaultLocalWorkSize;
 unsigned CLMiner::s_initialGlobalWorkSize = CLMiner::c_defaultGlobalWorkSizeMultiplier * CLMiner::c_defaultLocalWorkSize;
 unsigned CLMiner::s_threadsPerHash = 8;
 CLKernelName CLMiner::s_clKernelName = CLMiner::c_defaultKernelName;
-
-constexpr size_t c_maxSearchResults = 1;
 
 struct CLChannel: public LogChannel
 {
@@ -307,7 +306,7 @@ void CLMiner::workLoop()
 					continue;
 				}
 
-				cllog << "New work: header" << w.header << "target" << w.boundary.hex();
+				//cllog << "New work: header" << w.header << "target" << w.boundary.hex();
 
 				if (current.seed != w.seed)
 				{
@@ -347,14 +346,12 @@ void CLMiner::workLoop()
 
 			// Read results.
 			// TODO: could use pinned host pointer instead.
-			uint32_t results[c_maxSearchResults + 1];
+			search_results results;
 			m_queue.enqueueReadBuffer(m_searchBuffer, CL_TRUE, 0, sizeof(results), &results);
 
-			uint64_t nonce = 0;
-			if (results[0] > 0)
+			uint32_t count = results.count;
+			if (count > 0)
 			{
-				// Ignore results except the first one.
-				nonce = current.startNonce + results[1];
 				// Reset search buffer if any solution found.
 				m_queue.enqueueWriteBuffer(m_searchBuffer, CL_FALSE, 0, sizeof(c_zero), &c_zero);
 			}
@@ -365,8 +362,10 @@ void CLMiner::workLoop()
 
 			// Report results while the kernel is running.
 			// It takes some time because ethash must be re-evaluated on CPU.
-			if (nonce != 0)
-				report(nonce, current);
+			if (count > SEARCH_RESULTS)
+				count = SEARCH_RESULTS;
+			for (uint32_t i = 0; i < count; i++)
+				report(results.result[i].gid + current.startNonce, current);
 
 			current = w;        // kernel now processing newest work
 			current.startNonce = startNonce;
@@ -646,7 +645,7 @@ bool CLMiner::init(const h256& seed)
 		addDefinition(code, "DAG_SIZE", dagSize128);
 		addDefinition(code, "LIGHT_SIZE", lightSize64);
 		addDefinition(code, "ACCESSES", ETHASH_ACCESSES);
-		addDefinition(code, "MAX_OUTPUTS", c_maxSearchResults);
+		addDefinition(code, "MAX_OUTPUTS", SEARCH_RESULTS);
 		addDefinition(code, "PLATFORM", platformId);
 		addDefinition(code, "COMPUTE", computeCapability);
 		addDefinition(code, "THREADS_PER_HASH", s_threadsPerHash);
@@ -705,7 +704,7 @@ bool CLMiner::init(const h256& seed)
 
 		// create mining buffers
 		ETHCL_LOG("Creating mining buffer");
-		m_searchBuffer = cl::Buffer(m_context, CL_MEM_WRITE_ONLY, (c_maxSearchResults + 1) * sizeof(uint32_t));
+		m_searchBuffer = cl::Buffer(m_context, CL_MEM_WRITE_ONLY, sizeof(search_results));
 
 		uint32_t const work = (uint32_t)(dagSize / sizeof(node));
 		uint32_t fullRuns = work / m_globalWorkSize;
